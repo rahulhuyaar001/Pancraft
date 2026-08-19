@@ -294,7 +294,6 @@
         <div id="tab_inventory" class="tab-content">
           <div class="glass-panel">
             <h3 style="font-size:1.1rem; margin-bottom: 1rem;"><i class="fa-solid fa-warehouse" style="color:var(--accent);"></i> Live Inventory</h3>
-            <!-- Accordion Container for Batch Groups -->
             <div id="inventoryContainer"></div>
           </div>
         </div>
@@ -721,7 +720,6 @@
       saveDB(db); showToast(`Batch ${batchId} saved with ${count} items!`, 'success'); switchTab('mfg', 0);
     }
 
-    // --- UPDATED TAB 2: INVENTORY (Grouping by BATCH ID) ---
     function renderInv() {
       const db = getDB();
       const container = document.getElementById('inventoryContainer');
@@ -731,7 +729,6 @@
         return;
       }
 
-      // Grouping logic by BATCH ID (id) instead of item name
       const grouped = {};
       db.inventory.forEach(entry => {
         if (!grouped[entry.id]) {
@@ -742,7 +739,6 @@
       });
 
       let html = '';
-      // Sorting Batches (e.g. MFG-1002 before MFG-1001 for newest on top)
       const sortedBatches = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
 
       sortedBatches.forEach((batchId, idx) => {
