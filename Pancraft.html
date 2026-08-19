@@ -594,26 +594,38 @@
       }
     }
 
+    // MAIN FIX IS IN THIS STARTAPP FUNCTION
+    function startApp() {
+      document.getElementById('authScreen').style.display = 'none';
+      document.getElementById('mainApp').style.display = 'flex';
+
+      if(currentUser.role === 'employee') {
+        // ADMIN LOGIN
+        document.getElementById('sidebar').style.display = 'flex';
+        document.getElementById('mobileEmployeeNav').style.display = 'flex';
+        document.querySelector('.topbar').style.display = ''; // CSS default handling
+        document.getElementById('userBadgeLabelDesk').innerText = currentUser.name;
+        switchTab('mfg', 0);
+      } else {
+        // CLIENT LOGIN (HIDE ADMIN PANELS)
+        document.getElementById('sidebar').style.display = 'none'; 
+        document.getElementById('mobileEmployeeNav').style.display = 'none'; 
+        document.querySelector('.topbar').style.display = 'flex'; // Force topbar to show for logout button
+        switchTab('client', null);
+      }
+    }
+
+    // RESET DISPLAY STYLES ON LOGOUT
     function handleLogout() {
       currentUser = null;
       document.getElementById('mainApp').style.display = 'none';
       document.getElementById('authScreen').style.display = 'flex';
       document.getElementById('inputUsername').value = '';
       document.getElementById('inputPassword').value = '';
-    }
-
-    function startApp() {
-      document.getElementById('authScreen').style.display = 'none';
-      document.getElementById('mainApp').style.display = 'flex';
-
-      if(currentUser.role === 'employee') {
-        document.getElementById('mobileEmployeeNav').style.display = 'flex';
-        document.getElementById('userBadgeLabelDesk').innerText = currentUser.name;
-        switchTab('mfg', 0);
-      } else {
-        document.getElementById('mobileEmployeeNav').style.display = 'none';
-        switchTab('client', null);
-      }
+      
+      // Reset layout changes for the next login
+      document.getElementById('sidebar').style.display = '';
+      document.querySelector('.topbar').style.display = '';
     }
 
     function switchTab(tabId, index) {
