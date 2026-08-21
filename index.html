@@ -325,36 +325,33 @@
           <div class="glass-panel">
             <h3 style="font-size:1.1rem; margin-bottom: 1rem;"><i class="fa-solid fa-truck-ramp-box" style="color:var(--warning);"></i> Fast Dispatch</h3>
             <form onsubmit="processDispatch(event)">
-              <div class="row-grid">
-                <div class="form-group">
-                  <label>1. Select Order</label>
-                  <div id="dispOrdContainer">
-                    <input type="text" class="glass-input" disabled placeholder="Loading Orders...">
-                  </div>
-                </div>
-                <div class="form-group">
-                  <label>2. Pending Item</label>
-                  <div id="dispItemContainer">
-                    <input type="text" class="glass-input" disabled placeholder="Select Order First">
-                  </div>
-                </div>
-                <div class="form-group">
-                  <label>3. Stock Batch</label>
-                  <div id="dispBatchContainer">
-                    <input type="text" class="glass-input" disabled placeholder="Select Item First">
-                  </div>
-                </div>
-                <div class="form-group">
-                  <label>4. Send Qty</label>
-                  <input type="number" id="dispQty" class="glass-input" min="1" required disabled placeholder="Select Batch First">
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <label>1. Select Order</label>
+                <div id="dispOrdContainer">
+                  <input type="text" class="glass-input" disabled placeholder="Loading Orders...">
                 </div>
               </div>
-              <button type="submit" class="btn-gradient" style="margin-top:0.8rem;">Send Maal <i class="fa-solid fa-paper-plane"></i></button>
+              
+              <div style="background:var(--glass-inner); padding:1rem; border-radius:var(--radius-md);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                  <h4 style="font-size:0.9rem; color:var(--text-muted);">Items to Dispatch</h4>
+                  <button type="button" class="btn-secondary" onclick="addDispRow()">+ Add Item</button>
+                </div>
+                <!-- Dynamic Dispatch Rows will go here -->
+                <div id="dispBulkContainer"></div>
+              </div>
+              
+              <button type="submit" class="btn-gradient" style="margin-top:0.8rem;">Dispatch Selected Items <i class="fa-solid fa-paper-plane"></i></button>
             </form>
           </div>
+          
           <div class="glass-panel">
-            <h3 style="font-size:1.1rem; margin-bottom: 1rem;">Live Order Status</h3>
-            <div id="dispatchList"></div>
+            <h3 style="font-size:1.1rem; margin-bottom: 1rem; color:var(--warning);"><i class="fa-solid fa-clock"></i> Pending Orders</h3>
+            <div id="pendingDispatchList"></div>
+          </div>
+          <div class="glass-panel" style="margin-top: 1rem; opacity: 0.9;">
+            <h3 style="font-size:1.1rem; margin-bottom: 1rem; color:var(--success);"><i class="fa-solid fa-check-double"></i> Completed Orders</h3>
+            <div id="completedDispatchList"></div>
           </div>
         </div>
 
@@ -459,9 +456,29 @@
       if (day.length < 2) day = '0' + day;
       return [day, month, year].join('-');
     }
+    
+    // NEW URGENCY FUNCTION (RED/YELLOW/GREEN)
+    function getUrgencyStyle(targetDateStr) {
+      if(!targetDateStr) return 'color: var(--text-muted);';
+      const target = new Date(targetDateStr);
+      const today = new Date();
+      // Remove time precision to compare purely days
+      today.setHours(0,0,0,0);
+      target.setHours(0,0,0,0);
+      
+      const diffTime = target.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays <= 2) {
+        return 'color: var(--danger);'; // Urgent (Red)
+      } else if (diffDays <= 5) {
+        return 'color: var(--warning);'; // Moderate (Yellow)
+      } else {
+        return 'color: var(--success);'; // Relaxed (Green)
+      }
+    }
 
     window.onload = async () => { 
-      // Initialize Theme
       const savedTheme = localStorage.getItem('pancraft_theme');
       if(savedTheme === 'light') {
           document.body.classList.add('light-theme');
@@ -594,28 +611,24 @@
       }
     }
 
-    // MAIN FIX IS IN THIS STARTAPP FUNCTION
     function startApp() {
       document.getElementById('authScreen').style.display = 'none';
       document.getElementById('mainApp').style.display = 'flex';
 
       if(currentUser.role === 'employee') {
-        // ADMIN LOGIN
         document.getElementById('sidebar').style.display = 'flex';
         document.getElementById('mobileEmployeeNav').style.display = 'flex';
-        document.querySelector('.topbar').style.display = ''; // CSS default handling
+        document.querySelector('.topbar').style.display = ''; 
         document.getElementById('userBadgeLabelDesk').innerText = currentUser.name;
         switchTab('mfg', 0);
       } else {
-        // CLIENT LOGIN (HIDE ADMIN PANELS)
         document.getElementById('sidebar').style.display = 'none'; 
         document.getElementById('mobileEmployeeNav').style.display = 'none'; 
-        document.querySelector('.topbar').style.display = 'flex'; // Force topbar to show for logout button
+        document.querySelector('.topbar').style.display = 'flex'; 
         switchTab('client', null);
       }
     }
 
-    // RESET DISPLAY STYLES ON LOGOUT
     function handleLogout() {
       currentUser = null;
       document.getElementById('mainApp').style.display = 'none';
@@ -623,7 +636,6 @@
       document.getElementById('inputUsername').value = '';
       document.getElementById('inputPassword').value = '';
       
-      // Reset layout changes for the next login
       document.getElementById('sidebar').style.display = '';
       document.querySelector('.topbar').style.display = '';
     }
@@ -850,11 +862,15 @@
       saveDB(db); showToast('Order Created!', 'success'); switchTab('order', 2);
     }
 
+
+    /* =========================================================================
+       BULK DISPATCH LOGIC (UPDATED)
+       ========================================================================= */
     function loadDispOrds() {
       const db = getDB();
       const active = db.orders ? db.orders.filter(o => o.items.some(i => i.pend > 0)) : [];
       
-      const opts = active.map(o => `<div class="dropdown-item" data-value="${o.id}" onclick="selectCustomOption(this, '#dispOrd', 'loadDispItems')">${o.id} - ${o.client}</div>`).join('');
+      const opts = active.map(o => `<div class="dropdown-item" data-value="${o.id}" onclick="selectCustomOption(this, '#dispOrd', 'onDispOrderChange')">${o.id} - ${o.client}</div>`).join('');
       
       document.getElementById('dispOrdContainer').innerHTML = `
         <div class="dropdown-container">
@@ -864,68 +880,102 @@
             <input type="hidden" id="dispOrd">
         </div>
       `;
-      
-      document.getElementById('dispItemContainer').innerHTML = '<input type="text" class="glass-input" disabled placeholder="Select Order First">';
-      document.getElementById('dispBatchContainer').innerHTML = '<input type="text" class="glass-input" disabled placeholder="Select Item First">';
-      document.getElementById('dispQty').value = '';
-      document.getElementById('dispQty').disabled = true;
+      document.getElementById('dispBulkContainer').innerHTML = '';
     }
 
-    function loadDispItems() {
-      const db = getDB();
+    function onDispOrderChange() {
+      document.getElementById('dispBulkContainer').innerHTML = '';
+      addDispRow();
+    }
+
+    function addDispRow() {
       const oid = document.getElementById('dispOrd').value;
-      if(!oid) return;
-      const ord = db.orders.find(o => o.id === oid);
+      if(!oid) { showToast('Select order first!', 'error'); return; }
       
-      const opts = ord.items.map((it, idx) => it.pend>0 ? `<div class="dropdown-item" data-value="${idx}" data-n="${it.name}" data-p="${it.pend}" onclick="selectCustomOption(this, '#dispItem', 'loadDispBatches')">[Pend: ${it.pend}] ${it.name}</div>` : '').join('');
-      
-      document.getElementById('dispItemContainer').innerHTML = `
-        <div class="dropdown-container">
-            <input type="text" class="dropdown-search" placeholder="Search Item..." onfocus="toggleDropdown(this)" onkeyup="filterDropdown(this)" required>
-            <i class="fa-solid fa-chevron-down dropdown-arrow"></i>
-            <div class="dropdown-list">${opts || '<div class="dropdown-item">No Pending Items</div>'}</div>
-            <input type="hidden" id="dispItem">
-        </div>
-      `;
-      
-      document.getElementById('dispBatchContainer').innerHTML = '<input type="text" class="glass-input" disabled placeholder="Select Item First">';
-      document.getElementById('dispQty').value = '';
-      document.getElementById('dispQty').disabled = true;
-    }
-
-    function loadDispBatches() {
       const db = getDB();
-      const dispItem = document.getElementById('dispItem');
-      if(!dispItem || !dispItem.value) return;
+      const ord = db.orders.find(o => o.id === oid);
+      const pendingItems = ord.items.map((it, idx) => ({...it, oidx: idx})).filter(it => it.pend > 0);
+
+      if(pendingItems.length === 0) { showToast('No pending items left in this order.', 'warning'); return; }
+
+      const c = document.getElementById('dispBulkContainer');
+      const r = document.createElement('div');
+      r.className = 'item-group-card';
       
-      const n = dispItem.getAttribute('data-n');
-      const batches = db.inventory.filter(b => b.item === n && b.avail > 0);
-      
-      const opts = batches.length ? batches.map(b => `<div class="dropdown-item" data-value="${b.id}" data-a="${b.avail}" onclick="selectCustomOption(this, '#dispBatch', 'updateMaxQty')">${b.id} (Avail: ${b.avail})</div>`).join('') : '<div class="dropdown-item">Out of Stock</div>';
-      
-      document.getElementById('dispBatchContainer').innerHTML = `
-        <div class="dropdown-container">
-            <input type="text" class="dropdown-search" placeholder="Search Stock..." onfocus="toggleDropdown(this)" onkeyup="filterDropdown(this)" required>
-            <i class="fa-solid fa-chevron-down dropdown-arrow"></i>
-            <div class="dropdown-list">${opts}</div>
-            <input type="hidden" id="dispBatch">
-        </div>
+      const itemOpts = pendingItems.map(it => `<option value="${it.oidx}" data-name="${it.name}" data-pend="${it.pend}">${it.name} (Pend: ${it.pend})</option>`).join('');
+
+      r.innerHTML = `
+          <div class="item-group-header">
+              <span><i class="fa-solid fa-box"></i> Dispatch Item</span>
+              <button type="button" class="btn-danger-ghost" onclick="this.closest('.item-group-card').remove()">
+                  <i class="fa-solid fa-trash"></i> Remove
+              </button>
+          </div>
+          <div class="row-grid">
+              <div class="form-group">
+                  <label>Select Item</label>
+                  <select class="glass-input d-item" onchange="onDispItemChange(this)" required>
+                      <option value="">-- Choose Item --</option>
+                      ${itemOpts}
+                  </select>
+              </div>
+              <div class="form-group">
+                  <label>Stock Batch</label>
+                  <select class="glass-input d-batch" onchange="onDispBatchChange(this)" required disabled>
+                      <option value="">-- Choose Batch --</option>
+                  </select>
+              </div>
+              <div class="form-group">
+                  <label>Send Qty</label>
+                  <input type="number" class="glass-input d-qty" min="1" required disabled>
+              </div>
+          </div>
       `;
-      document.getElementById('dispQty').value = '';
-      document.getElementById('dispQty').disabled = true;
+      c.appendChild(r);
     }
 
-    function updateMaxQty() {
-      const isel = document.getElementById('dispItem');
-      const bsel = document.getElementById('dispBatch');
-      const q = document.getElementById('dispQty');
+    function onDispItemChange(sel) {
+      const row = sel.closest('.item-group-card');
+      const batchSel = row.querySelector('.d-batch');
+      const qtyInput = row.querySelector('.d-qty');
       
-      if(isel && bsel && isel.value && bsel.value) {
-        const p = parseInt(isel.getAttribute('data-p'));
-        const a = parseInt(bsel.getAttribute('data-a'));
-        q.max = Math.min(p, a); 
-        q.value = q.max;
-        q.disabled = false;
+      qtyInput.value = '';
+      qtyInput.disabled = true;
+      batchSel.innerHTML = '<option value="">-- Choose Batch --</option>';
+      batchSel.disabled = true;
+
+      const opt = sel.options[sel.selectedIndex];
+      if(!opt.value) return;
+
+      const itemName = opt.getAttribute('data-name');
+      const db = getDB();
+      const batches = db.inventory.filter(b => b.item === itemName && b.avail > 0);
+
+      if(batches.length === 0) {
+          batchSel.innerHTML = '<option value="">Out of Stock</option>';
+      } else {
+          batchSel.innerHTML += batches.map(b => `<option value="${b.id}" data-avail="${b.avail}">${b.id} (Avail: ${b.avail})</option>`).join('');
+          batchSel.disabled = false;
+      }
+    }
+
+    function onDispBatchChange(sel) {
+      const row = sel.closest('.item-group-card');
+      const itemSel = row.querySelector('.d-item');
+      const qtyInput = row.querySelector('.d-qty');
+      
+      const itemOpt = itemSel.options[itemSel.selectedIndex];
+      const batchOpt = sel.options[sel.selectedIndex];
+      
+      if(batchOpt.value) {
+          const pend = parseInt(itemOpt.getAttribute('data-pend'));
+          const avail = parseInt(batchOpt.getAttribute('data-avail'));
+          qtyInput.max = Math.min(pend, avail);
+          qtyInput.value = qtyInput.max; 
+          qtyInput.disabled = false;
+      } else {
+          qtyInput.value = '';
+          qtyInput.disabled = true;
       }
     }
 
@@ -933,53 +983,123 @@
       e.preventDefault();
       const db = getDB();
       const oid = document.getElementById('dispOrd').value;
-      const iidx = document.getElementById('dispItem').value;
-      const bid = document.getElementById('dispBatch').value;
-      const q = parseInt(document.getElementById('dispQty').value);
-
-      if(!oid || !iidx || !bid || !q) { showToast('Complete all fields', 'error'); return; }
+      if(!oid) { showToast('Select order!', 'error'); return; }
       
       const o = db.orders.find(x => x.id === oid);
-      const b = db.inventory.find(x => x.id === bid);
+      const rows = document.querySelectorAll('#dispBulkContainer > .item-group-card');
       
-      if(q > b.avail) { showToast('Insufficient stock!', 'error'); return; }
+      if(rows.length === 0) { showToast('Add at least one item to dispatch!', 'error'); return; }
       
-      b.avail -= q;
-      o.items[iidx].sent += q;
-      o.items[iidx].pend -= q;
-      if(o.items[iidx].pend === 0) o.items[iidx].status = 'dispatched';
+      let batchDeductions = {};
+      let itemDeductions = {};
+      let updates = [];
 
-      saveDB(db); showToast(`${q} Sent Successfully!`, 'success'); 
-      loadDispOrds(); renderDispList();
+      // Validate all rows before applying anything
+      for(let r of rows) {
+          const iidx = r.querySelector('.d-item').value;
+          const bid = r.querySelector('.d-batch').value;
+          const q = parseInt(r.querySelector('.d-qty').value);
+
+          if(!iidx || !bid || isNaN(q) || q <= 0) {
+              showToast('Please fill all fields properly in every row.', 'error');
+              return;
+          }
+          
+          batchDeductions[bid] = (batchDeductions[bid] || 0) + q;
+          itemDeductions[iidx] = (itemDeductions[iidx] || 0) + q;
+          updates.push({iidx, bid, q});
+      }
+
+      // Check max limits
+      for(let bid in batchDeductions) {
+          const b = db.inventory.find(x => x.id === bid);
+          if(batchDeductions[bid] > b.avail) {
+              showToast(`Total qty exceeds available stock for batch ${bid}`, 'error'); return;
+          }
+      }
+      for(let iidx in itemDeductions) {
+          if(itemDeductions[iidx] > o.items[iidx].pend) {
+              showToast(`Total send qty exceeds pending required for ${o.items[iidx].name}`, 'error'); return;
+          }
+      }
+
+      // Apply modifications
+      updates.forEach(u => {
+          const b = db.inventory.find(x => x.id === u.bid);
+          b.avail -= u.q;
+          o.items[u.iidx].sent += u.q;
+          o.items[u.iidx].pend -= u.q;
+          if(o.items[u.iidx].pend === 0) o.items[u.iidx].status = 'dispatched';
+      });
+
+      saveDB(db);
+      showToast('Bulk Dispatch Successful!', 'success');
+      
+      document.getElementById('dispBulkContainer').innerHTML = '';
+      loadDispOrds();
+      renderDispList();
     }
 
+
+    /* =========================================================================
+       LIVE ORDER STATUS & OTHERS
+       ========================================================================= */
     function renderDispList() {
       const db = getDB();
-      const c = document.getElementById('dispatchList');
+      const pendingContainer = document.getElementById('pendingDispatchList');
+      const completedContainer = document.getElementById('completedDispatchList');
+      
       if(!db.orders) return;
-      c.innerHTML = db.orders.map((o, oidx) => `
-        <div class="order-card">
-          <div class="order-head" onclick="document.getElementById('d-${oidx}').classList.toggle('open')">
-            <div><span class="badge-primary">${o.id}</span> <b style="margin-left:5px; font-size:0.9rem; color:var(--text-light);">${o.client}</b></div>
-            <i class="fa-solid fa-chevron-down" style="color:var(--text-muted);"></i>
-          </div>
-          <div class="order-body" id="d-${oidx}">
-            ${o.items.map((it, iidx) => `
-              <div style="background:rgba(0,0,0,0.05); padding:12px; border-radius:8px; margin-bottom:8px;">
-                <div style="font-size:0.9rem; font-weight:bold; margin-bottom:5px; color:var(--text-light);">${it.name}</div>
-                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                  <div style="font-size:0.75rem; color:var(--text-muted);">
-                    Req: ${it.req} | Sent: <b style="color:var(--success);">${it.sent}</b> | Pend: <b style="color:var(--warning);">${it.pend}</b>
-                  </div>
-                  <select class="glass-input" style="padding:4px 8px; font-size:0.75rem; height:auto; width:auto;" onchange="updStg('${o.id}', ${iidx}, this.value)">
-                    ${STAGES.map(s => `<option value="${s.id}" ${s.id===it.status?'selected':''}>${s.label}</option>`).join('')}
-                  </select>
-                </div>
+
+      // 1. ऑर्डर्स को दो अलग लिस्ट में बाँटना (0 pending के आधार पर)
+      const pendingOrders = db.orders.filter(o => o.items.some(i => i.pend > 0));
+      const completedOrders = db.orders.filter(o => o.items.every(i => i.pend === 0));
+
+      // 2. HTML जनरेट करने का फंक्शन
+      const generateOrderHTML = (orders, isCompleted) => {
+        if(orders.length === 0) return `<p style="color:var(--text-muted); font-size: 0.85rem; padding: 10px 0;">No ${isCompleted ? 'completed' : 'pending'} orders.</p>`;
+
+        return orders.map((o, oidx) => {
+          const toggleId = `d-${isCompleted ? 'comp' : 'pend'}-${o.id}`; // यूनिक ID
+          return `
+          <div class="order-card" style="${isCompleted ? 'border-color: rgba(16, 185, 129, 0.3);' : ''}">
+            <div class="order-head" onclick="document.getElementById('${toggleId}').classList.toggle('open')">
+              <div>
+                  <span class="badge-primary" style="${isCompleted ? 'background: rgba(16, 185, 129, 0.2); color: var(--success);' : ''}">${o.id}</span> 
+                  <b style="margin-left:5px; font-size:0.9rem; color:var(--text-light);">${o.client}</b>
+                  <span style="font-size:0.75rem; color:var(--text-muted); margin-left:10px;"><i class="fa-regular fa-calendar"></i> Date: ${displayDateIST(o.date)}</span>
               </div>
-            `).join('')}
+              <div style="display:flex; align-items:center; gap: 10px;">
+                  ${isCompleted ? '<span style="color:var(--success); font-size:0.75rem; font-weight:bold;"><i class="fa-solid fa-check-circle"></i> Done</span>' : ''}
+                  <i class="fa-solid fa-chevron-down" style="color:var(--text-muted);"></i>
+              </div>
+            </div>
+            <div class="order-body" id="${toggleId}">
+              ${o.items.map((it, iidx) => `
+                <div style="background:rgba(0,0,0,0.05); padding:12px; border-radius:8px; margin-bottom:8px; ${it.pend === 0 ? 'border-left: 3px solid var(--success);' : ''}">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                      <div style="font-size:0.9rem; font-weight:bold; color:var(--text-light);">${it.name}</div>
+                      <!-- Target Date यहाँ दिखेगी -->
+                      <div style="font-size:0.75rem; font-weight:bold; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.1); ${getUrgencyStyle(it.date)}">Target: ${displayDateIST(it.date)}</div>
+                  </div>
+                  
+                  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <div style="font-size:0.75rem; color:var(--text-muted);">
+                      Req: ${it.req} | Sent: <b style="color:var(--success);">${it.sent}</b> | Pend: <b style="color:${it.pend === 0 ? 'var(--success)' : 'var(--warning)'};">${it.pend}</b>
+                    </div>
+                    <select class="glass-input" style="padding:4px 8px; font-size:0.75rem; height:auto; width:auto; ${it.pend === 0 ? 'color: var(--success); border-color: var(--success);' : ''}" onchange="updStg('${o.id}', ${iidx}, this.value)" ${isCompleted ? 'disabled' : ''}>
+                      ${STAGES.map(s => `<option value="${s.id}" ${s.id===it.status?'selected':''}>${s.label}</option>`).join('')}
+                    </select>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
           </div>
-        </div>
-      `).join('');
+        `}).join('');
+      };
+
+      pendingContainer.innerHTML = generateOrderHTML(pendingOrders, false);
+      completedContainer.innerHTML = generateOrderHTML(completedOrders, true);
     }
 
     function updStg(oid, iidx, val) {
@@ -1077,6 +1197,9 @@
       saveDB(db); showToast(`Restocked ${repQty}!`, 'success'); renderReturnsList();
     }
 
+    /* =========================================================================
+       CLIENT PORTAL (UPDATED)
+       ========================================================================= */
     function renderClient() {
       const db = getDB();
       const o = db.orders.find(x => x.id === currentUser.id);
@@ -1086,7 +1209,9 @@
       let html = `
         <div class="glass-panel" style="background:rgba(59, 130, 246, 0.1); border-left: 4px solid var(--accent); padding: 1.2rem;">
           <h2 style="font-size:1.3rem; color: var(--text-light);">${o.id}</h2>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-top:4px;"><b>${o.client}</b> • ${displayDateIST(o.date)}</p>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-top:4px;">
+              <b>${o.client}</b> • Order Date: ${displayDateIST(o.date)}
+          </p>
         </div>
       `;
 
@@ -1094,7 +1219,20 @@
         const curIdx = STAGES.findIndex(s => s.id === it.status);
         return `
           <div class="glass-panel">
-            <h4 style="color:var(--primary); font-size:1rem; margin-bottom:10px;">${idx+1}. ${it.name}</h4>
+            <!-- UPDATED: Target Date added to Client Panel too -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <h4 style="color:var(--primary); font-size:1.1rem; margin:0;">${idx+1}. ${it.name}</h4>
+                <div style="font-size:0.75rem; font-weight:bold; padding: 4px 8px; border-radius: 6px; background:rgba(0,0,0,0.15); ${getUrgencyStyle(it.date)}">
+                  Target: ${displayDateIST(it.date)}
+                </div>
+            </div>
+            
+            <div style="display:flex; justify-content:space-between; gap:10px; background:rgba(0,0,0,0.1); padding:10px 15px; border-radius:8px; margin-bottom:15px; font-size:0.85rem; font-weight:600;">
+                <div>Ordered: <b style="color:var(--text-light);">${it.req}</b></div>
+                <div>Sent: <b style="color:var(--success);">${it.sent}</b></div>
+                <div>Pending: <b style="color:var(--warning);">${it.pend}</b></div>
+            </div>
+
             <div class="stepper-wrapper">
               <div class="glass-stepper">
                 ${STAGES.map((st, sIdx) => `
