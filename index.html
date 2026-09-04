@@ -304,8 +304,10 @@
             <h3 style="font-size:1.1rem; margin-bottom: 1rem;"><i class="fa-solid fa-file-invoice" style="color:var(--success);"></i> Create Order</h3>
             <form onsubmit="saveOrder(event)">
               <div class="row-grid" style="margin-bottom:1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--glass-border);">
-                <div class="form-group"><label>Order ID (Auto)</label><input type="text" id="ordId" class="glass-input" readonly style="color:var(--success); font-weight:bold;"></div>
+                <div class="form-group"><label>Order ID</label><input type="text" id="ordId" class="glass-input" readonly style="color:var(--success); font-weight:bold;"></div>
                 <div class="form-group"><label>Client Name</label><input type="text" id="ordClient" class="glass-input" placeholder="Ex: Dozy" required></div>
+                <!-- WHATSAPP NUMBER -->
+                <div class="form-group"><label>WhatsApp No.</label><input type="number" id="ordPhone" class="glass-input" placeholder="9876543210" required></div>
                 <div class="form-group"><label>Booking Date</label><input type="date" id="ordDate" class="glass-input" onclick="if(this.showPicker) this.showPicker();" required></div>
               </div>
               <div style="background:var(--glass-inner); padding:1rem; border-radius:var(--radius-md); margin-top:1rem;">
@@ -337,11 +339,10 @@
                   <h4 style="font-size:0.9rem; color:var(--text-muted);">Items to Dispatch</h4>
                   <button type="button" class="btn-secondary" onclick="addDispRow()">+ Add Item</button>
                 </div>
-                <!-- Dynamic Dispatch Rows will go here -->
                 <div id="dispBulkContainer"></div>
               </div>
               
-              <button type="submit" class="btn-gradient" style="margin-top:0.8rem;">Dispatch Selected Items <i class="fa-solid fa-paper-plane"></i></button>
+              <button type="submit" class="btn-gradient" style="margin-top:0.8rem;">Dispatch & Notify Client <i class="fa-brands fa-whatsapp"></i></button>
             </form>
           </div>
           
@@ -457,12 +458,10 @@
       return [day, month, year].join('-');
     }
     
-    // NEW URGENCY FUNCTION (RED/YELLOW/GREEN)
     function getUrgencyStyle(targetDateStr) {
       if(!targetDateStr) return 'color: var(--text-muted);';
       const target = new Date(targetDateStr);
       const today = new Date();
-      // Remove time precision to compare purely days
       today.setHours(0,0,0,0);
       target.setHours(0,0,0,0);
       
@@ -470,11 +469,11 @@
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       
       if (diffDays <= 2) {
-        return 'color: var(--danger);'; // Urgent (Red)
+        return 'color: var(--danger);'; 
       } else if (diffDays <= 5) {
-        return 'color: var(--warning);'; // Moderate (Yellow)
+        return 'color: var(--warning);'; 
       } else {
-        return 'color: var(--success);'; // Relaxed (Green)
+        return 'color: var(--success);'; 
       }
     }
 
@@ -530,7 +529,7 @@
       t.innerHTML += `<span>${msg}</span>`;
       c.appendChild(t);
       setTimeout(()=>t.classList.add('show'), 10);
-      setTimeout(()=> { t.classList.remove('show'); setTimeout(()=>t.remove(), 300); }, 2500);
+      setTimeout(()=> { t.classList.remove('show'); setTimeout(()=>t.remove(), 300); }, 3000);
     }
 
     function toggleSidebar() {
@@ -660,6 +659,7 @@
         document.getElementById('ordId').value = genOrdId('ORD-'); 
         document.getElementById('ordDate').value = getTodayIST();
         document.getElementById('ordClient').value = 'DOZY (HNN Group)'; 
+        document.getElementById('ordPhone').value = ''; 
         document.getElementById('ordContainer').innerHTML=''; addOrdRow();
       }
       else if(tabId === 'dispatch') { loadDispOrds(); renderDispList(); }
@@ -841,6 +841,7 @@
       const orderId = document.getElementById('ordId').value;
       const orderDate = document.getElementById('ordDate').value;
       const clientName = document.getElementById('ordClient').value.trim();
+      const clientPhone = document.getElementById('ordPhone').value.trim(); 
       
       const rows = document.querySelectorAll('#ordContainer > .item-group-card');
       if(rows.length===0) { showToast('Add at least one item!', 'error'); return; }
@@ -858,14 +859,10 @@
       if(err) { showToast('Select valid items from dropdown.', 'error'); return; }
       
       if(!db.orders) db.orders = [];
-      db.orders.unshift({ id: orderId, client: clientName, date: orderDate, clientRemarks: '', items });
+      db.orders.unshift({ id: orderId, client: clientName, phone: clientPhone, date: orderDate, clientRemarks: '', items });
       saveDB(db); showToast('Order Created!', 'success'); switchTab('order', 2);
     }
 
-
-    /* =========================================================================
-       BULK DISPATCH LOGIC (UPDATED)
-       ========================================================================= */
     function loadDispOrds() {
       const db = getDB();
       const active = db.orders ? db.orders.filter(o => o.items.some(i => i.pend > 0)) : [];
@@ -994,7 +991,6 @@
       let itemDeductions = {};
       let updates = [];
 
-      // Validate all rows before applying anything
       for(let r of rows) {
           const iidx = r.querySelector('.d-item').value;
           const bid = r.querySelector('.d-batch').value;
@@ -1010,7 +1006,6 @@
           updates.push({iidx, bid, q});
       }
 
-      // Check max limits
       for(let bid in batchDeductions) {
           const b = db.inventory.find(x => x.id === bid);
           if(batchDeductions[bid] > b.avail) {
@@ -1023,7 +1018,6 @@
           }
       }
 
-      // Apply modifications
       updates.forEach(u => {
           const b = db.inventory.find(x => x.id === u.bid);
           b.avail -= u.q;
@@ -1033,17 +1027,47 @@
       });
 
       saveDB(db);
-      showToast('Bulk Dispatch Successful!', 'success');
+      
+      // ==========================================
+      // WHATSAPP SMART NOTIFICATION TRIGGER (FREE)
+      // ==========================================
+      if (o.phone && o.phone.length >= 10) {
+          let waMessage = `*Hello ${o.client},*\n\nAapka order *${o.id}* dispatch ho gaya hai 🚚.\n\n*Items Sent:*\n`;
+          
+          updates.forEach(u => {
+              let itemName = o.items[u.iidx].name;
+              waMessage += `📦 ${itemName}: ${u.q} units\n`;
+          });
+          
+          waMessage += `\nThank You!\n*PanCraft Factory*`;
+          const encodedMessage = encodeURIComponent(waMessage);
+          
+          let countryCode = "91"; 
+          let finalPhone = o.phone.replace(/\D/g,''); 
+          if(finalPhone.length === 10) { finalPhone = countryCode + finalPhone; }
+
+          const waLink = `https://wa.me/${finalPhone}?text=${encodedMessage}`;
+          
+          // Popup bypass trick
+          const waAnchor = document.createElement('a');
+          waAnchor.href = waLink;
+          waAnchor.target = '_blank';
+          document.body.appendChild(waAnchor);
+          waAnchor.click();
+          document.body.removeChild(waAnchor);
+          
+          // Ye aayegi specific WhatsApp Success Toast
+          showToast('WhatsApp Ready! Please click send.', 'success');
+      } else {
+          // Agar number nahi tha, to warning dega
+          showToast('Dispatch Saved! (WhatsApp No. missing)', 'warning');
+      }
       
       document.getElementById('dispBulkContainer').innerHTML = '';
       loadDispOrds();
       renderDispList();
     }
 
-
-    /* =========================================================================
-       LIVE ORDER STATUS & OTHERS
-       ========================================================================= */
     function renderDispList() {
       const db = getDB();
       const pendingContainer = document.getElementById('pendingDispatchList');
@@ -1051,16 +1075,14 @@
       
       if(!db.orders) return;
 
-      // 1. ऑर्डर्स को दो अलग लिस्ट में बाँटना (0 pending के आधार पर)
       const pendingOrders = db.orders.filter(o => o.items.some(i => i.pend > 0));
       const completedOrders = db.orders.filter(o => o.items.every(i => i.pend === 0));
 
-      // 2. HTML जनरेट करने का फंक्शन
       const generateOrderHTML = (orders, isCompleted) => {
         if(orders.length === 0) return `<p style="color:var(--text-muted); font-size: 0.85rem; padding: 10px 0;">No ${isCompleted ? 'completed' : 'pending'} orders.</p>`;
 
         return orders.map((o, oidx) => {
-          const toggleId = `d-${isCompleted ? 'comp' : 'pend'}-${o.id}`; // यूनिक ID
+          const toggleId = `d-${isCompleted ? 'comp' : 'pend'}-${o.id}`; 
           return `
           <div class="order-card" style="${isCompleted ? 'border-color: rgba(16, 185, 129, 0.3);' : ''}">
             <div class="order-head" onclick="document.getElementById('${toggleId}').classList.toggle('open')">
@@ -1079,7 +1101,6 @@
                 <div style="background:rgba(0,0,0,0.05); padding:12px; border-radius:8px; margin-bottom:8px; ${it.pend === 0 ? 'border-left: 3px solid var(--success);' : ''}">
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
                       <div style="font-size:0.9rem; font-weight:bold; color:var(--text-light);">${it.name}</div>
-                      <!-- Target Date यहाँ दिखेगी -->
                       <div style="font-size:0.75rem; font-weight:bold; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,0.1); ${getUrgencyStyle(it.date)}">Target: ${displayDateIST(it.date)}</div>
                   </div>
                   
@@ -1197,9 +1218,6 @@
       saveDB(db); showToast(`Restocked ${repQty}!`, 'success'); renderReturnsList();
     }
 
-    /* =========================================================================
-       CLIENT PORTAL (UPDATED)
-       ========================================================================= */
     function renderClient() {
       const db = getDB();
       const o = db.orders.find(x => x.id === currentUser.id);
@@ -1219,7 +1237,6 @@
         const curIdx = STAGES.findIndex(s => s.id === it.status);
         return `
           <div class="glass-panel">
-            <!-- UPDATED: Target Date added to Client Panel too -->
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                 <h4 style="color:var(--primary); font-size:1.1rem; margin:0;">${idx+1}. ${it.name}</h4>
                 <div style="font-size:0.75rem; font-weight:bold; padding: 4px 8px; border-radius: 6px; background:rgba(0,0,0,0.15); ${getUrgencyStyle(it.date)}">
