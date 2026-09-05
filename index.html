@@ -529,7 +529,7 @@
       t.innerHTML += `<span>${msg}</span>`;
       c.appendChild(t);
       setTimeout(()=>t.classList.add('show'), 10);
-      setTimeout(()=> { t.classList.remove('show'); setTimeout(()=>t.remove(), 300); }, 3000);
+      setTimeout(()=> { t.classList.remove('show'); setTimeout(()=>t.remove(), 300); }, 3500);
     }
 
     function toggleSidebar() {
@@ -1039,7 +1039,7 @@
               waMessage += `📦 ${itemName}: ${u.q} units\n`;
           });
           
-          waMessage += `\nThank You!\n*PanCraft Factory*`;
+          waMessage += `\nThank You!\n*RD*`;
           const encodedMessage = encodeURIComponent(waMessage);
           
           let countryCode = "91"; 
